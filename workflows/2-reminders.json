@@ -1,0 +1,387 @@
+{
+  "id": "clinicReminders1",
+  "name": "2 · Clinic – Appointment Reminders (daily 09:00)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Cairo",
+    "errorWorkflow": "clinicErrorHndlr"
+  },
+  "nodes": [
+    {
+      "id": "c2000000-0000-4000-8000-000000000001",
+      "name": "Note: Reminders",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -340
+      ],
+      "parameters": {
+        "content": "## ⏰ Appointment reminders\nEvery day at **09:00 (Cairo)** the system emails each patient who has a **Confirmed** appointment **tomorrow**, in their own language (Arabic or English), then marks the row `reminder_sent = true` so nobody is reminded twice.\n\nFewer no-shows, zero manual follow-up. *Run now* lets you test it any time.",
+        "width": 1180,
+        "height": 200,
+        "color": 4
+      }
+    },
+    {
+      "id": "c2000000-0000-4000-8000-000000000002",
+      "name": "Every day at 09:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -60
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 9
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c2000000-0000-4000-8000-000000000003",
+      "name": "Run now (test)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c2000000-0000-4000-8000-000000000004",
+      "name": "Read Bookings sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        40
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bookings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    },
+    {
+      "id": "c2000000-0000-4000-8000-000000000005",
+      "name": "Tomorrow, Confirmed, not reminded",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "19f52faa-03ff-4562-85af-586301ff66ec",
+              "leftValue": "={{ $json.date }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "={{ $now.plus({ days: 1 }).toFormat('yyyy-MM-dd') }}"
+            },
+            {
+              "id": "cd15b9d5-7933-47a0-bc2f-d8fbad114bcd",
+              "leftValue": "={{ String($json.status).trim() }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "Confirmed"
+            },
+            {
+              "id": "81be5945-5f47-4139-ad36-16fd9752363f",
+              "leftValue": "={{ String($json.reminder_sent).trim() }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              },
+              "rightValue": "true"
+            },
+            {
+              "id": "74ae23c1-afe5-47b4-aaf0-e54651a56abc",
+              "leftValue": "={{ $json.email }}",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              },
+              "rightValue": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c2000000-0000-4000-8000-000000000006",
+      "name": "Email reminder",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        680,
+        40
+      ],
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM_NAME }} <{{ $env.SMTP_USER }}>",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.language === 'ar' ? `تذكير بموعدك غداً – ${$env.CLINIC_NAME}` : `Reminder: your appointment tomorrow – ${$env.CLINIC_NAME}` }}",
+        "emailFormat": "html",
+        "html": "={{ '<div dir=\"' + ($json.language === 'ar' ? 'rtl' : 'ltr') + '\" style=\"font-family:Arial,sans-serif;font-size:15px;line-height:1.7\">' + ($json.language === 'ar' ? `مرحباً ${$json.name || ''}،<br><br>نذكّرك بموعدك في ${$env.CLINIC_NAME} <b>غداً ${$json.date} الساعة ${$json.time}</b>.<br>رقم الحجز: ${$json.id}<br><br>لو حابب تغيّر الموعد، رد على الإيميل ده.` : `Hi ${$json.name || 'there'},<br><br>This is a friendly reminder of your appointment at ${$env.CLINIC_NAME} <b>tomorrow, ${$json.date} at ${$json.time}</b>.<br>Booking reference: ${$json.id}<br><br>Need to reschedule? Just reply to this email.`) + '<br><br>— ' + $env.CLINIC_NAME + '</div>' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "clinicSmtpGmail1",
+          "name": "Clinic Gmail SMTP"
+        }
+      }
+    },
+    {
+      "id": "c2000000-0000-4000-8000-000000000007",
+      "name": "Mark reminder_sent = true",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        900,
+        40
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "update",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bookings"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $('Tomorrow, Confirmed, not reminded').item.json.id }}",
+            "reminder_sent": "true"
+          },
+          "matchingColumns": [
+            "id"
+          ],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "reminder_sent",
+              "displayName": "reminder_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": false
+            },
+            {
+              "id": "language",
+              "displayName": "language",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true,
+              "removed": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day at 09:00": {
+      "main": [
+        [
+          {
+            "node": "Read Bookings sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now (test)": {
+      "main": [
+        [
+          {
+            "node": "Read Bookings sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Bookings sheet": {
+      "main": [
+        [
+          {
+            "node": "Tomorrow, Confirmed, not reminded",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Tomorrow, Confirmed, not reminded": {
+      "main": [
+        [
+          {
+            "node": "Email reminder",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Email reminder": {
+      "main": [
+        [
+          {
+            "node": "Mark reminder_sent = true",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
