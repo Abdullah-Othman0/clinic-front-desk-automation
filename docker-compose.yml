@@ -1,0 +1,23 @@
+services:
+  n8n:
+    image: docker.n8n.io/n8nio/n8n:${N8N_VERSION:-2.47.3}
+    restart: unless-stopped
+    ports:
+      - "${N8N_PORT:-5678}:5678"
+    # every variable in .env is visible to workflows as {{ $env.NAME }}
+    env_file: .env
+    environment:
+      - GENERIC_TIMEZONE=${TZ:-Africa/Cairo}
+      - TZ=${TZ:-Africa/Cairo}
+      - N8N_ENCRYPTION_KEY=${N8N_ENCRYPTION_KEY:?set N8N_ENCRYPTION_KEY in .env}
+      - WEBHOOK_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - N8N_EDITOR_BASE_URL=${WEBHOOK_URL:-http://localhost:5678/}
+      - N8N_BLOCK_ENV_ACCESS_IN_NODE=false
+      - N8N_RUNNERS_ENABLED=true
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ./workflows:/workflows
+      - ./secrets:/secrets:ro
+
+volumes:
+  n8n_data:
