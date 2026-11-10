@@ -1,0 +1,218 @@
+{
+  "id": "clinicSummary001",
+  "name": "3 · Clinic – Daily Summary (20:00)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Cairo",
+    "errorWorkflow": "clinicErrorHndlr"
+  },
+  "nodes": [
+    {
+      "id": "c3000000-0000-4000-8000-000000000001",
+      "name": "Note: Summary",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -60,
+        -320
+      ],
+      "parameters": {
+        "content": "## 📊 Daily summary for the clinic\nEvery evening at **20:00 (Cairo)** the clinic gets one Telegram message: today's new bookings, questions and complaints, plus **tomorrow's schedule** – so the team starts the next day prepared.",
+        "width": 1000,
+        "height": 180,
+        "color": 5
+      }
+    },
+    {
+      "id": "c3000000-0000-4000-8000-000000000002",
+      "name": "Every day at 20:00",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "typeVersion": 1.2,
+      "position": [
+        0,
+        -60
+      ],
+      "parameters": {
+        "rule": {
+          "interval": [
+            {
+              "triggerAtHour": 20
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "c3000000-0000-4000-8000-000000000003",
+      "name": "Run now (test)",
+      "type": "n8n-nodes-base.manualTrigger",
+      "typeVersion": 1,
+      "position": [
+        0,
+        120
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c3000000-0000-4000-8000-000000000004",
+      "name": "Read Bookings sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        240,
+        40
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bookings"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "c3000000-0000-4000-8000-000000000005",
+      "name": "Read Inquiries sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        460,
+        40
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Inquiries"
+        },
+        "options": {}
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      },
+      "alwaysOutputData": true,
+      "executeOnce": true
+    },
+    {
+      "id": "c3000000-0000-4000-8000-000000000006",
+      "name": "Build summary",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        680,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Count today's activity and list tomorrow's schedule.\nconst today = $now.toFormat('yyyy-MM-dd');\nconst tomorrow = $now.plus({ days: 1 }).toFormat('yyyy-MM-dd');\nconst rows = name => $(name).all().map(i => i.json).filter(r => r.id); // skip the empty placeholder item\nconst bookings = rows('Read Bookings sheet');\nconst inquiries = rows('Read Inquiries sheet');\n\nconst todayMsgs = inquiries.filter(r => String(r.created_at).startsWith(today));\nconst count = intent => todayMsgs.filter(r => r.intent === intent).length;\nconst newBookings = bookings.filter(r => String(r.created_at).startsWith(today));\nconst complaints = todayMsgs.filter(r => r.intent === 'complaint');\nconst urgent = todayMsgs.filter(r => r.urgency === 'high' && r.intent !== 'complaint');\nconst tmrw = bookings\n  .filter(r => r.date === tomorrow && !/cancel/i.test(r.status))\n  .sort((a, b) => String(a.time).localeCompare(String(b.time)));\n\nconst lines = [\n  `📊 Daily summary – ${$now.toFormat('cccc d LLL yyyy')}`,\n  '',\n  `Today: ${todayMsgs.length} message(s)`,\n  `• New bookings: ${newBookings.length}`,\n  `• Questions: ${count('question')}`,\n  `• Complaints: ${complaints.length}`,\n  `• Urgent cases: ${urgent.length}`,\n  `• Other/spam: ${count('other')}`,\n];\nif (complaints.length) lines.push('', '⚠️ Complaints:', ...complaints.map(r => `• ${r.name || 'Unknown'} (${r.phone || r.email || '-'}): ${r.summary}`));\nif (urgent.length) lines.push('', '🚨 Urgent:', ...urgent.map(r => `• ${r.name || 'Unknown'} (${r.phone || '-'}): ${r.summary}`));\nlines.push('', `📅 Tomorrow (${tomorrow}): ${tmrw.length} appointment(s)`);\nlines.push(...(tmrw.length ? tmrw.map(r => `• ${r.time} – ${r.name || 'Unknown'} (${r.phone || '-'}) [${r.status}]`) : ['• No appointments']));\nconst pending = tmrw.filter(r => !/confirm/i.test(r.status)).length;\nif (pending) lines.push('', `👉 ${pending} of tomorrow's booking(s) still Pending – confirm them in the sheet.`);\n\nreturn [{ json: { text: lines.join('\\n') } }];"
+      }
+    },
+    {
+      "id": "c3000000-0000-4000-8000-000000000007",
+      "name": "Telegram: Send summary",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        900,
+        40
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $json.text }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "clinicTelegram01",
+          "name": "Clinic Telegram Bot"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Every day at 20:00": {
+      "main": [
+        [
+          {
+            "node": "Read Bookings sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Run now (test)": {
+      "main": [
+        [
+          {
+            "node": "Read Bookings sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Bookings sheet": {
+      "main": [
+        [
+          {
+            "node": "Read Inquiries sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Inquiries sheet": {
+      "main": [
+        [
+          {
+            "node": "Build summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build summary": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Send summary",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
