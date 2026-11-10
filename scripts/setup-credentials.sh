@@ -12,7 +12,7 @@ docker compose exec -T n8n sh -c 'node -e "
 const fs = require(\"fs\"), e = process.env, out = [];
 const add = (id, name, type, data, ok) => ok ? out.push({ id, name, type, data }) : console.log(\"skip  \" + name + \" (not configured yet)\");
 add(\"clinicTelegram01\", \"Clinic Telegram Bot\", \"telegramApi\", { accessToken: e.TELEGRAM_BOT_TOKEN }, e.TELEGRAM_BOT_TOKEN);
-add(\"clinicOpenAi0001\", \"Clinic OpenAI\", \"openAiApi\", { apiKey: e.OPENAI_API_KEY }, e.OPENAI_API_KEY);
+add(\"clinicGemini0001\", \"Clinic Google Gemini\", \"googlePalmApi\", { host: \"https://generativelanguage.googleapis.com\", apiKey: e.GEMINI_API_KEY }, e.GEMINI_API_KEY);
 add(\"clinicSmtpGmail1\", \"Clinic Gmail SMTP\", \"smtp\", { user: e.SMTP_USER, password: e.SMTP_PASS, host: \"smtp.gmail.com\", port: 465, secure: true }, e.SMTP_USER && e.SMTP_PASS);
 add(\"clinicWebhookAu1\", \"Clinic Webhook Secret\", \"httpHeaderAuth\", { name: \"X-Clinic-Secret\", value: e.WEBHOOK_SECRET }, e.WEBHOOK_SECRET);
 const sa = \"/secrets/google-service-account.json\";

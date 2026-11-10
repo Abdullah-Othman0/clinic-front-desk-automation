@@ -1,0 +1,2234 @@
+{
+  "id": "clinicIntake0001",
+  "name": "1 · Clinic – Intake (form + webhook + AI)",
+  "active": false,
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Cairo",
+    "errorWorkflow": "clinicErrorHndlr",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "nodes": [
+    {
+      "id": "c1000000-0000-4000-8000-000000000001",
+      "name": "Note: Triggers",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1300,
+        -400
+      ],
+      "parameters": {
+        "content": "## 1 · Two ways in, one path\n**Webhook** for the AI chatbot / other systems (requires the `X-Clinic-Secret` header).\n**Form** for patients on the website: it forwards each submission to the same webhook, so every message is handled by exactly the same logic.",
+        "width": 860,
+        "height": 170,
+        "color": 7
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000002",
+      "name": "Contact the clinic (form)",
+      "type": "n8n-nodes-base.formTrigger",
+      "typeVersion": 2.2,
+      "position": [
+        -1240,
+        -160
+      ],
+      "parameters": {
+        "formTitle": "Contact the clinic",
+        "formDescription": "Book a visit or ask us anything – Arabic or English. احجز موعدك أو اسألنا أي سؤال.",
+        "formFields": {
+          "values": [
+            {
+              "fieldLabel": "Name",
+              "requiredField": true,
+              "placeholder": "Your full name"
+            },
+            {
+              "fieldLabel": "Phone",
+              "requiredField": true,
+              "placeholder": "+20 10 0000 0000"
+            },
+            {
+              "fieldLabel": "Email",
+              "fieldType": "email",
+              "requiredField": true
+            },
+            {
+              "fieldLabel": "Message",
+              "fieldType": "textarea",
+              "requiredField": true,
+              "placeholder": "e.g. I'd like a cleaning appointment next Sunday at 6 pm"
+            }
+          ]
+        },
+        "responseMode": "onReceived",
+        "options": {
+          "respondWithOptions": {
+            "values": {
+              "respondWith": "text",
+              "formSubmittedText": "Thank you! We received your message and will reply shortly. شكراً لك! استلمنا رسالتك وسنرد عليك قريباً."
+            }
+          }
+        }
+      },
+      "webhookId": "5b0a4f0e-3c1e-4c55-9a0d-c11c1a000001"
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000003",
+      "name": "Forward form to webhook",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -1000,
+        -160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.WEBHOOK_URL }}webhook/clinic-intake",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ name: $json.Name, phone: $json.Phone, email: $json.Email, message: $json.Message, source: 'form' }) }}",
+        "options": {
+          "timeout": 120000
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "clinicWebhookAu1",
+          "name": "Clinic Webhook Secret"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000004",
+      "name": "Webhook /clinic-intake",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -1000,
+        40
+      ],
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "clinic-intake",
+        "authentication": "headerAuth",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "clinicWebhookAu1",
+          "name": "Clinic Webhook Secret"
+        }
+      },
+      "webhookId": "5b0a4f0e-3c1e-4c55-9a0d-c11c1a000002"
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000005",
+      "name": "Normalize input",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -760,
+        40
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Callers send slightly different shapes -> one clean shape. Never trust input.\nconst src = typeof $json.body === 'object' && $json.body !== null ? $json.body : {};\nconst pick = (...keys) => {\n  for (const k of keys) {\n    const v = src[k];\n    if (v !== undefined && v !== null && String(v).trim() !== '') return String(v).trim();\n  }\n  return '';\n};\nreturn { json: {\n  source: pick('source') === 'form' ? 'form' : 'webhook',\n  name: pick('name', 'Name').slice(0, 100),\n  phone: pick('phone', 'Phone').slice(0, 40),\n  email: pick('email', 'Email').slice(0, 120),\n  message: pick('message', 'Message', 'text').slice(0, 2000),\n  received_at: $now.toFormat('yyyy-MM-dd HH:mm'),\n} };"
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000006",
+      "name": "Has a message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        -540,
+        40
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "64e6ec3d-723b-4ed5-a5bc-b11c99fa1881",
+              "leftValue": "={{ $json.message }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000007",
+      "name": "Reply: invalid request",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        -300,
+        180
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "14852052-3cd0-459d-9651-b3bb77a49398",
+              "name": "ok",
+              "value": "false",
+              "type": "boolean"
+            },
+            {
+              "id": "1a034cd7-1ff6-4957-9287-e196545251b7",
+              "name": "intent",
+              "value": "",
+              "type": "string"
+            },
+            {
+              "id": "9b42de3d-eea1-46ec-9f75-6ea73f8802b5",
+              "name": "reply",
+              "value": "Request must be JSON with a non-empty \"message\" field.",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000008",
+      "name": "Note: Understand",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -340,
+        -420
+      ],
+      "parameters": {
+        "content": "## 2 · Understand the message (Google Gemini)\nAI returns strict JSON: intent, urgency, language, name, phone, email, preferred date/time, summary.\nThe JSON is **validated**; if it is broken the AI is asked **once more**, then it falls back to *other*. Network errors retry 3× automatically.",
+        "width": 940,
+        "height": 180,
+        "color": 6
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000009",
+      "name": "AI: Understand message",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -300,
+        -160
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text:\n`You are the front-desk assistant of ${$env.CLINIC_NAME}, a dental clinic in Cairo, Egypt.\nToday is ${$now.toFormat('cccc yyyy-MM-dd')} (Africa/Cairo). Read the patient's message and return JSON only.\n- intent: \"booking\" (wants an appointment/visit/check-up), \"question\" (asks about hours, prices, services, location, payment...), \"complaint\" (unhappy with service, staff, bill, treatment), \"other\" (spam, ads, unrelated, empty greetings).\n- urgency: \"high\" for severe pain, swelling, bleeding, trauma, broken tooth, fever or any emergency; \"low\" for general information; otherwise \"normal\". Complaints are at least \"normal\".\n- language: \"ar\" if the patient writes mainly in Arabic, otherwise \"en\".\n- preferred_date: YYYY-MM-DD. Resolve words like today, tomorrow, بكرة, next Sunday from today's date. \"\" if not given.\n- preferred_time: HH:mm 24-hour (\"6 pm\" -> \"18:00\", \"بعد العصر\" is not a time -> \"\"). \"\" if not given.\n- name, phone, email: from the message or the form fields; \"\" if unknown.\n- summary: one short English sentence for clinic staff.` }] },\n  contents: [{ role: 'user', parts: [{ text:\n    'Form fields: name=' + $json.name + ', phone=' + $json.phone + ', email=' + $json.email + '\\n\\nPatient message:\\n' + $json.message }] }],\n  generationConfig: {\n    temperature: 0,\n    responseMimeType: 'application/json',\n    responseSchema: {\n      type: 'OBJECT',\n      properties: {\n        intent: { type: 'STRING', enum: ['booking', 'question', 'complaint', 'other'] },\n        name: { type: 'STRING' }, phone: { type: 'STRING' }, email: { type: 'STRING' },\n        preferred_date: { type: 'STRING' }, preferred_time: { type: 'STRING' },\n        urgency: { type: 'STRING', enum: ['low', 'normal', 'high'] },\n        language: { type: 'STRING', enum: ['ar', 'en'] },\n        summary: { type: 'STRING' }\n      },\n      required: ['intent', 'name', 'phone', 'email', 'preferred_date', 'preferred_time', 'urgency', 'language', 'summary']\n    }\n  }\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "clinicGemini0001",
+          "name": "Clinic Google Gemini"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000010",
+      "name": "Validate AI answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -80,
+        -160
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Parse and validate the AI JSON. Never trust it blindly.\nconst input = $('Has a message?').item.json;\nconst raw = $json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';\nlet ai = null;\ntry { ai = JSON.parse(raw); } catch (e) { ai = null; }\nconst oneOf = (v, list) => list.includes(v);\nconst valid = !!ai && typeof ai === 'object'\n  && oneOf(ai.intent, ['booking', 'question', 'complaint', 'other'])\n  && oneOf(ai.urgency, ['low', 'normal', 'high'])\n  && oneOf(ai.language, ['ar', 'en'])\n  && typeof ai.summary === 'string';\nconst FALLBACK = false;\nif (!valid && !FALLBACK) return { json: { valid: false } };\nconst a = valid ? ai : { intent: 'other', urgency: 'normal', summary: 'AI could not read this message (needs manual review).',\n  language: /[؀-ۿ]/.test(input.message) ? 'ar' : 'en' };\nconst str = v => (typeof v === 'string' ? v.trim() : '');\nconst date = /^\\d{4}-\\d{2}-\\d{2}$/.test(str(a.preferred_date)) ? str(a.preferred_date) : '';\nconst time = /^([01]\\d|2[0-3]):[0-5]\\d$/.test(str(a.preferred_time)) ? str(a.preferred_time) : '';\nreturn { json: {\n  valid: true, ai_ok: valid,\n  intent: a.intent, urgency: a.urgency, language: a.language, summary: str(a.summary),\n  name: input.name || str(a.name), phone: input.phone || str(a.phone), email: input.email || str(a.email),\n  preferred_date: date, preferred_time: time,\n  message: input.message, source: input.source, received_at: input.received_at,\n} };"
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000011",
+      "name": "Valid JSON?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        140,
+        -160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "be2a3c65-ae04-405c-ac4d-580d18b2b650",
+              "leftValue": "={{ $json.valid }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000012",
+      "name": "AI: Retry once",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        140,
+        20
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text:\n`You are the front-desk assistant of ${$env.CLINIC_NAME}, a dental clinic in Cairo, Egypt.\nToday is ${$now.toFormat('cccc yyyy-MM-dd')} (Africa/Cairo). Read the patient's message and return JSON only.\n- intent: \"booking\" (wants an appointment/visit/check-up), \"question\" (asks about hours, prices, services, location, payment...), \"complaint\" (unhappy with service, staff, bill, treatment), \"other\" (spam, ads, unrelated, empty greetings).\n- urgency: \"high\" for severe pain, swelling, bleeding, trauma, broken tooth, fever or any emergency; \"low\" for general information; otherwise \"normal\". Complaints are at least \"normal\".\n- language: \"ar\" if the patient writes mainly in Arabic, otherwise \"en\".\n- preferred_date: YYYY-MM-DD. Resolve words like today, tomorrow, بكرة, next Sunday from today's date. \"\" if not given.\n- preferred_time: HH:mm 24-hour (\"6 pm\" -> \"18:00\", \"بعد العصر\" is not a time -> \"\"). \"\" if not given.\n- name, phone, email: from the message or the form fields; \"\" if unknown.\n- summary: one short English sentence for clinic staff.` }] },\n  contents: [{ role: 'user', parts: [{ text:\n    'Form fields: name=' + $('Has a message?').item.json.name + ', phone=' + $('Has a message?').item.json.phone + ', email=' + $('Has a message?').item.json.email + '\\n\\nPatient message:\\n' + $('Has a message?').item.json.message }] }],\n  generationConfig: {\n    temperature: 0.2,\n    responseMimeType: 'application/json',\n    responseSchema: {\n      type: 'OBJECT',\n      properties: {\n        intent: { type: 'STRING', enum: ['booking', 'question', 'complaint', 'other'] },\n        name: { type: 'STRING' }, phone: { type: 'STRING' }, email: { type: 'STRING' },\n        preferred_date: { type: 'STRING' }, preferred_time: { type: 'STRING' },\n        urgency: { type: 'STRING', enum: ['low', 'normal', 'high'] },\n        language: { type: 'STRING', enum: ['ar', 'en'] },\n        summary: { type: 'STRING' }\n      },\n      required: ['intent', 'name', 'phone', 'email', 'preferred_date', 'preferred_time', 'urgency', 'language', 'summary']\n    }\n  }\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "clinicGemini0001",
+          "name": "Clinic Google Gemini"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000013",
+      "name": "Validate retry (fallback: other)",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        360,
+        20
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Parse and validate the AI JSON. Never trust it blindly.\nconst input = $('Has a message?').item.json;\nconst raw = $json.candidates?.[0]?.content?.parts?.[0]?.text ?? '';\nlet ai = null;\ntry { ai = JSON.parse(raw); } catch (e) { ai = null; }\nconst oneOf = (v, list) => list.includes(v);\nconst valid = !!ai && typeof ai === 'object'\n  && oneOf(ai.intent, ['booking', 'question', 'complaint', 'other'])\n  && oneOf(ai.urgency, ['low', 'normal', 'high'])\n  && oneOf(ai.language, ['ar', 'en'])\n  && typeof ai.summary === 'string';\nconst FALLBACK = true;\nif (!valid && !FALLBACK) return { json: { valid: false } };\nconst a = valid ? ai : { intent: 'other', urgency: 'normal', summary: 'AI could not read this message (needs manual review).',\n  language: /[؀-ۿ]/.test(input.message) ? 'ar' : 'en' };\nconst str = v => (typeof v === 'string' ? v.trim() : '');\nconst date = /^\\d{4}-\\d{2}-\\d{2}$/.test(str(a.preferred_date)) ? str(a.preferred_date) : '';\nconst time = /^([01]\\d|2[0-3]):[0-5]\\d$/.test(str(a.preferred_time)) ? str(a.preferred_time) : '';\nreturn { json: {\n  valid: true, ai_ok: valid,\n  intent: a.intent, urgency: a.urgency, language: a.language, summary: str(a.summary),\n  name: input.name || str(a.name), phone: input.phone || str(a.phone), email: input.email || str(a.email),\n  preferred_date: date, preferred_time: time,\n  message: input.message, source: input.source, received_at: input.received_at,\n} };"
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000014",
+      "name": "Understood request",
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        580,
+        -160
+      ],
+      "parameters": {}
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000015",
+      "name": "Note: Urgent",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        760,
+        -700
+      ],
+      "parameters": {
+        "content": "## 3 · Urgent cases\nAny message with **high urgency** (severe pain, swelling, bleeding...) instantly alerts the clinic on Telegram, while the normal flow continues (an urgent booking is still booked).",
+        "width": 520,
+        "height": 170,
+        "color": 3
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000016",
+      "name": "Urgent? (high, not complaint)",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        800,
+        -480
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "70966f3f-e09d-4253-9794-7bbd7918c885",
+              "leftValue": "={{ $json.urgency }}",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              },
+              "rightValue": "high"
+            },
+            {
+              "id": "b1536206-673c-4d05-9977-1f648103f155",
+              "leftValue": "={{ $json.intent }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEquals"
+              },
+              "rightValue": "complaint"
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000017",
+      "name": "Telegram: URGENT case",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1040,
+        -500
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🚨 URGENT – {{ $json.intent }} (high urgency)\n\n{{ $json.summary }}\n\nName: {{ $json.name || '-' }}\nPhone: {{ $json.phone || '-' }}\nEmail: {{ $json.email || '-' }}\nLanguage: {{ $json.language }}\n\nMessage:\n{{ $json.message }}\n\nPlease call the patient now.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "clinicTelegram01",
+          "name": "Clinic Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000018",
+      "name": "Route by intent",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        800,
+        -160
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "519a839f-1b7e-4b3d-85f7-ec0ef7ed1195",
+                    "leftValue": "={{ $json.intent }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "booking"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "booking"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "9f16fbc9-85a7-4cc5-86e8-957016b7029f",
+                    "leftValue": "={{ $json.intent }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "question"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "question"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "183aa8f8-2fd7-4589-837a-7269b6bea908",
+                    "leftValue": "={{ $json.intent }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "complaint"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "complaint"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "loose",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "b821008f-5e06-44d7-983b-ce545da2f48c",
+                    "leftValue": "={{ $json.intent }}",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    },
+                    "rightValue": "other"
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "other"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000019",
+      "name": "Note: Booking",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        -320
+      ],
+      "parameters": {
+        "content": "## 4 · Booking\nNo date or time → the patient is asked for it.\nComplete → row in **Bookings** (status *Pending*), confirmation email in the patient's language, Telegram to the clinic. Staff set status to **Confirmed** in the sheet; reminders go out the day before.",
+        "width": 1060,
+        "height": 140,
+        "color": 4
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000020",
+      "name": "Date & time given?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1060,
+        -160
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "eb167741-2cf1-4358-9dd2-c6119c5a63f6",
+              "leftValue": "={{ $json.preferred_date }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            },
+            {
+              "id": "04efbc08-7a82-4271-8207-fe3d837a0782",
+              "leftValue": "={{ $json.preferred_time }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000021",
+      "name": "Booking row",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        -180
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "7525b706-c1db-4d2e-ace6-c3e5b55b86e3",
+              "name": "id",
+              "value": "={{ 'BK-' + $now.toFormat('yyMMdd-HHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "1fceaea7-481d-42e9-af83-7c91ec3160b9",
+              "name": "created_at",
+              "value": "={{ $now.toFormat('yyyy-MM-dd HH:mm') }}",
+              "type": "string"
+            },
+            {
+              "id": "eb04f589-3a97-4f59-a782-f63c7137088a",
+              "name": "name",
+              "value": "={{ $json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "27988371-ba31-4388-b628-263cdb599f15",
+              "name": "phone",
+              "value": "={{ $json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "453b5a98-e0fb-4354-8bc0-18b8de2f0fa2",
+              "name": "email",
+              "value": "={{ $json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "c69c6be5-ae06-4719-864c-22ca5f46dac6",
+              "name": "date",
+              "value": "={{ $json.preferred_date }}",
+              "type": "string"
+            },
+            {
+              "id": "76461aab-425d-42b9-805d-a5a6682324bc",
+              "name": "time",
+              "value": "={{ $json.preferred_time }}",
+              "type": "string"
+            },
+            {
+              "id": "3d271b7d-2ee2-429c-9eee-3a48cc605ccf",
+              "name": "status",
+              "value": "Pending",
+              "type": "string"
+            },
+            {
+              "id": "9f36ecea-dd4d-4b2f-8875-06673956f411",
+              "name": "reminder_sent",
+              "value": "false",
+              "type": "string"
+            },
+            {
+              "id": "9a3f3b14-6d73-4919-a2c2-ec59d1533932",
+              "name": "language",
+              "value": "={{ $json.language }}",
+              "type": "string"
+            },
+            {
+              "id": "439202e9-c02d-49eb-a942-0ba8ac08a560",
+              "name": "summary",
+              "value": "={{ $json.summary }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000022",
+      "name": "Add to Bookings sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        1500,
+        -180
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bookings"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.id }}",
+            "created_at": "={{ $json.created_at }}",
+            "name": "={{ $json.name }}",
+            "phone": "={{ $json.phone }}",
+            "email": "={{ $json.email }}",
+            "date": "={{ $json.date }}",
+            "time": "={{ $json.time }}",
+            "status": "={{ $json.status }}",
+            "reminder_sent": "={{ $json.reminder_sent }}",
+            "language": "={{ $json.language }}",
+            "summary": "={{ $json.summary }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "date",
+              "displayName": "date",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "time",
+              "displayName": "time",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "status",
+              "displayName": "status",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "reminder_sent",
+              "displayName": "reminder_sent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "language",
+              "displayName": "language",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000023",
+      "name": "Telegram: New booking",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1720,
+        -180
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🦷 New booking request\n\nRef: {{ $('Booking row').item.json.id }}\nName: {{ $('Booking row').item.json.name || '-' }}\nDate: {{ $('Booking row').item.json.date }} at {{ $('Booking row').item.json.time }}\nPhone: {{ $('Booking row').item.json.phone || '-' }}\nEmail: {{ $('Booking row').item.json.email || '-' }}\nLanguage: {{ $('Booking row').item.json.language }}\nNote: {{ $('Booking row').item.json.summary }}\n\nStatus: Pending – change to Confirmed in the Bookings sheet.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "clinicTelegram01",
+          "name": "Clinic Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000024",
+      "name": "Outcome: booking received",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1940,
+        -180
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "c7a5b676-38c4-409b-9c8c-4def0eab48a4",
+              "name": "ok",
+              "value": "true",
+              "type": "boolean"
+            },
+            {
+              "id": "739e2b67-eeeb-4b18-b547-b38f9dd25448",
+              "name": "intent",
+              "value": "booking",
+              "type": "string"
+            },
+            {
+              "id": "ad57c6b9-ce99-4a0b-9075-13be0cc7f491",
+              "name": "urgency",
+              "value": "={{ $('Understood request').item.json.urgency }}",
+              "type": "string"
+            },
+            {
+              "id": "4c2eec28-f4cc-4121-926e-4a22dc39f024",
+              "name": "name",
+              "value": "={{ $('Understood request').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "249d6a62-9261-42f1-be63-ec7931e5ebb7",
+              "name": "phone",
+              "value": "={{ $('Understood request').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "6c8565fd-4d30-48be-87d9-e7877c334dad",
+              "name": "email",
+              "value": "={{ $('Understood request').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "9d653d40-fb54-45a0-985d-406734bf4763",
+              "name": "language",
+              "value": "={{ $('Understood request').item.json.language }}",
+              "type": "string"
+            },
+            {
+              "id": "b98e4799-e9b7-4696-9f90-00ba55aca36f",
+              "name": "patient_message",
+              "value": "={{ $('Understood request').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "a59905e0-2761-4c60-91c4-c3edeab686bf",
+              "name": "summary",
+              "value": "={{ $('Understood request').item.json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "4b313ff5-ce6a-464d-a3f4-9405ed937db1",
+              "name": "log_id",
+              "value": "={{ 'MSG-' + $now.toFormat('yyMMdd-HHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "a7ba8bc8-b3a5-43a8-8415-e20b33cec5bc",
+              "name": "created_at",
+              "value": "={{ $now.toFormat('yyyy-MM-dd HH:mm') }}",
+              "type": "string"
+            },
+            {
+              "id": "211ec4b4-513d-4fca-9926-023c2dade112",
+              "name": "action_taken",
+              "value": "={{ 'Booked ' + $('Booking row').item.json.id + ' (Pending)' }}",
+              "type": "string"
+            },
+            {
+              "id": "7f72be46-163c-4e3e-99d2-342d688cff1d",
+              "name": "reply",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `شكراً${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}! استلمنا طلب حجزك يوم ${$('Booking row').item.json.date} الساعة ${$('Booking row').item.json.time}. سيتواصل معك فريقنا لتأكيد الموعد قريباً. رقم الطلب: ${$('Booking row').item.json.id}` : `Thank you${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}! We received your booking request for ${$('Booking row').item.json.date} at ${$('Booking row').item.json.time}. Our team will confirm it shortly. Reference: ${$('Booking row').item.json.id}` }}",
+              "type": "string"
+            },
+            {
+              "id": "3bffa958-361b-4f88-8420-21fc80e3238c",
+              "name": "email_subject",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `تم استلام طلب الحجز – ${$env.CLINIC_NAME}` : `Booking request received – ${$env.CLINIC_NAME}` }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000025",
+      "name": "Outcome: ask for date/time",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        0
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "78c904b3-7c31-4bea-8413-ca75c85d6339",
+              "name": "ok",
+              "value": "true",
+              "type": "boolean"
+            },
+            {
+              "id": "03c4017a-56f6-49c4-a72a-5c0761341827",
+              "name": "intent",
+              "value": "booking",
+              "type": "string"
+            },
+            {
+              "id": "b18e7e60-22b9-4df3-91ca-6c797e8b6c4c",
+              "name": "urgency",
+              "value": "={{ $('Understood request').item.json.urgency }}",
+              "type": "string"
+            },
+            {
+              "id": "d66a1b3e-5275-427c-b270-2e43d794c2e3",
+              "name": "name",
+              "value": "={{ $('Understood request').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "b229a47b-aa4f-40b6-923b-582030d114f3",
+              "name": "phone",
+              "value": "={{ $('Understood request').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "0397b260-04d4-45c8-87a0-7fe1d1380691",
+              "name": "email",
+              "value": "={{ $('Understood request').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "3b8c57ea-d4d1-49f9-9d69-90a76bbde2a2",
+              "name": "language",
+              "value": "={{ $('Understood request').item.json.language }}",
+              "type": "string"
+            },
+            {
+              "id": "1c9337fa-373f-43e8-911c-0ab91730c386",
+              "name": "patient_message",
+              "value": "={{ $('Understood request').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "39d1fb9f-a7a2-4f32-a1c8-6bba55f49009",
+              "name": "summary",
+              "value": "={{ $('Understood request').item.json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "92e576e0-09dc-4f1a-8a1c-b68d0dd26ff2",
+              "name": "log_id",
+              "value": "={{ 'MSG-' + $now.toFormat('yyMMdd-HHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "9ecd5037-e134-4614-bef3-c613e481a14e",
+              "name": "created_at",
+              "value": "={{ $now.toFormat('yyyy-MM-dd HH:mm') }}",
+              "type": "string"
+            },
+            {
+              "id": "70a195d4-191f-47fe-920e-c30fb9a6dcfb",
+              "name": "action_taken",
+              "value": "={{ $('Understood request').item.json.urgency === 'high' ? 'URGENT – team will call the patient' : 'Asked patient for date/time' }}",
+              "type": "string"
+            },
+            {
+              "id": "d895da84-a838-429f-809d-438cb1205cc0",
+              "name": "reply",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `${$('Understood request').item.json.urgency === 'high' ? `سلامتك${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}! تم إبلاغ فريقنا وسنتصل بك حالاً – حالات الطوارئ نستقبلها في نفس اليوم.` : `شكراً${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}! لإتمام الحجز، من فضلك أرسل لنا اليوم والوقت المناسبين لك (مثلاً: الأحد الساعة ٦ مساءً).`}` : `${$('Understood request').item.json.urgency === 'high' ? `We are sorry you are in pain${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}. Our team has been alerted and will call you right away – emergencies are seen the same day.` : `Thanks${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}! To book your visit, please send us your preferred day and time (for example: Sunday 6 pm).`}` }}",
+              "type": "string"
+            },
+            {
+              "id": "83674d3c-96fc-44ac-a7ac-e5af2087a0f7",
+              "name": "email_subject",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `متى يناسبك الموعد؟ – ${$env.CLINIC_NAME}` : `When would you like to visit? – ${$env.CLINIC_NAME}` }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000026",
+      "name": "Note: Questions",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        160
+      ],
+      "parameters": {
+        "content": "## 5 · Questions – answered ONLY from the clinic FAQ\nThe FAQ (hours, address, services, prices) lives in one node and is easy to edit. If the answer is not in it, the patient is told the clinic will reply and the team is notified.",
+        "width": 1060,
+        "height": 140,
+        "color": 5
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000027",
+      "name": "Clinic FAQ",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1060,
+        320
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "9eff5e09-621e-41ac-9c7d-0fed1c820979",
+              "name": "faq",
+              "type": "string",
+              "value": "Clinic: Bright Smile Dental Clinic (demo data)\nOpening hours: Saturday to Thursday 10:00–22:00. Friday closed.\nAddress: 15 Abbas El Akkad St, Nasr City, Cairo. Near City Stars. Street parking available.\nPhone / WhatsApp: +20 100 000 0000\nServices and prices (EGP):\n- Check-up and consultation: 300\n- Teeth cleaning (scaling and polishing): 600\n- Tooth-coloured filling: 800 to 1,200\n- Root canal treatment: 2,500 to 4,000\n- Tooth extraction: 500 to 1,500 (surgical wisdom tooth from 2,000)\n- Teeth whitening (in clinic): 3,500\n- Braces / clear aligners: consultation 400, treatment plan priced after assessment\n- Dental implants: from 15,000 per implant\n- Children's dentistry: check-up 250\nPayment: cash, cards, InstaPay. No installment plans.\nInsurance: we accept AXA and MetLife (others: ask the front desk).\nAppointments: booking recommended; walk-ins welcome if a dentist is free. Emergencies are seen the same day."
+            }
+          ]
+        },
+        "includeOtherFields": true,
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000028",
+      "name": "AI: Answer from FAQ",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1280,
+        320
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text:\n`Answer the patient's question using ONLY the clinic FAQ below. Do not guess or add facts.\nIf the FAQ does not contain the answer, return answered=false and answer=\"\".\nReply in ${$json.language === 'ar' ? 'Arabic' : 'English'}, friendly and short (max 3 sentences).\n\nFAQ:\n${$json.faq}` }] },\n  contents: [{ role: 'user', parts: [{ text: $json.message }] }],\n  generationConfig: { temperature: 0, responseMimeType: 'application/json',\n    responseSchema: { type: 'OBJECT', properties: { answered: { type: 'BOOLEAN' }, answer: { type: 'STRING' } }, required: ['answered', 'answer'] } }\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "clinicGemini0001",
+          "name": "Clinic Google Gemini"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000029",
+      "name": "Read FAQ answer",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1500,
+        320
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "let r = null;\ntry { r = JSON.parse($json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''); } catch (e) { r = null; }\nconst answered = !!(r && r.answered === true && typeof r.answer === 'string' && r.answer.trim());\nreturn { json: { answered, answer: answered ? r.answer.trim() : '' } };"
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000030",
+      "name": "Answered from FAQ?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1720,
+        320
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "f4d3b710-af28-4aa8-bc77-ce441c2a9d07",
+              "leftValue": "={{ $json.answered }}",
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000031",
+      "name": "Telegram: Question for the team",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1940,
+        420
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=❓ Question not covered by the FAQ\n\nFrom: {{ $('Understood request').item.json.name || '-' }} ({{ $('Understood request').item.json.phone || $('Understood request').item.json.email || 'no contact' }})\nLanguage: {{ $('Understood request').item.json.language }}\n\n{{ $('Understood request').item.json.message }}\n\nPlease reply to the patient.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "clinicTelegram01",
+          "name": "Clinic Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000032",
+      "name": "Outcome: question",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        2160,
+        320
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "e5fce547-6130-4e7b-8e74-72e4784c663b",
+              "name": "ok",
+              "value": "true",
+              "type": "boolean"
+            },
+            {
+              "id": "4f53b188-b8d3-43af-882f-1956f4c6583f",
+              "name": "intent",
+              "value": "question",
+              "type": "string"
+            },
+            {
+              "id": "66ed2bef-b20e-4e9c-9f51-3eb4149ae8bb",
+              "name": "urgency",
+              "value": "={{ $('Understood request').item.json.urgency }}",
+              "type": "string"
+            },
+            {
+              "id": "bbc42b47-61fc-45c8-890c-81fc3e770f3b",
+              "name": "name",
+              "value": "={{ $('Understood request').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "3c69a115-8d45-4f65-a9d0-71a8146f88c9",
+              "name": "phone",
+              "value": "={{ $('Understood request').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "abbc1598-95c0-46ff-be13-6fdc06f75a34",
+              "name": "email",
+              "value": "={{ $('Understood request').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "3b3cfe6c-fd14-4812-bbd1-d3158d155d29",
+              "name": "language",
+              "value": "={{ $('Understood request').item.json.language }}",
+              "type": "string"
+            },
+            {
+              "id": "38d3e8fc-9a3a-46b0-95ac-ec388a18bb96",
+              "name": "patient_message",
+              "value": "={{ $('Understood request').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "ee850bef-4bb0-4cda-8775-49b515835434",
+              "name": "summary",
+              "value": "={{ $('Understood request').item.json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "47f37a31-1e2f-485a-a2cc-dba78b5b96ff",
+              "name": "log_id",
+              "value": "={{ 'MSG-' + $now.toFormat('yyMMdd-HHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "126be8d4-814b-4a2e-bd15-8aed1e22f541",
+              "name": "created_at",
+              "value": "={{ $now.toFormat('yyyy-MM-dd HH:mm') }}",
+              "type": "string"
+            },
+            {
+              "id": "d49368b6-12d1-4d7c-bf71-28265932070f",
+              "name": "action_taken",
+              "value": "={{ $('Read FAQ answer').item.json.answered ? 'Answered from FAQ' : 'Not in FAQ – team notified' }}",
+              "type": "string"
+            },
+            {
+              "id": "c8f315fb-8e0f-424b-b6ce-83ceba4ee36b",
+              "name": "reply",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `${$('Read FAQ answer').item.json.answered ? $('Read FAQ answer').item.json.answer : 'شكراً لسؤالك! سيرد عليك فريقنا في أقرب وقت.'}` : `${$('Read FAQ answer').item.json.answered ? $('Read FAQ answer').item.json.answer : 'Thanks for your question! Our team will reply to you soon.'}` }}",
+              "type": "string"
+            },
+            {
+              "id": "6a197834-fdce-4ea4-ae6b-79bc955bb1d9",
+              "name": "email_subject",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `بخصوص سؤالك – ${$env.CLINIC_NAME}` : `Your question – ${$env.CLINIC_NAME}` }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000033",
+      "name": "Note: Complaints",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        1020,
+        520
+      ],
+      "parameters": {
+        "content": "## 6 · Complaints & other\nComplaints alert the clinic immediately (**URGENT**) and the patient gets an apology. Spam/other is only logged.",
+        "width": 700,
+        "height": 120,
+        "color": 3
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000034",
+      "name": "Telegram: URGENT complaint",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        1060,
+        680
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "=🚨 URGENT – Patient complaint\n\n{{ $json.summary }}\n\nName: {{ $json.name || '-' }}\nPhone: {{ $json.phone || '-' }}\nEmail: {{ $json.email || '-' }}\n\nMessage:\n{{ $json.message }}\n\nPlease contact the patient today.",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "clinicTelegram01",
+          "name": "Clinic Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000035",
+      "name": "Outcome: complaint",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        680
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "f73f1351-3fa4-48d0-83db-bb7bac797d90",
+              "name": "ok",
+              "value": "true",
+              "type": "boolean"
+            },
+            {
+              "id": "a12ff520-5c99-4c22-aab0-9d57d9854092",
+              "name": "intent",
+              "value": "complaint",
+              "type": "string"
+            },
+            {
+              "id": "489440e2-8bd4-4f83-b9a8-66ab5079f0db",
+              "name": "urgency",
+              "value": "={{ $('Understood request').item.json.urgency }}",
+              "type": "string"
+            },
+            {
+              "id": "bb42dd56-939f-44d7-8a0a-5092e339b15b",
+              "name": "name",
+              "value": "={{ $('Understood request').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "4167e064-564f-4003-8043-dc1cec42a79e",
+              "name": "phone",
+              "value": "={{ $('Understood request').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "58d7cda7-afdb-4a95-a346-cb1d686803b6",
+              "name": "email",
+              "value": "={{ $('Understood request').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "f8b799f3-472a-43a2-9d5c-c64d0322b95d",
+              "name": "language",
+              "value": "={{ $('Understood request').item.json.language }}",
+              "type": "string"
+            },
+            {
+              "id": "d309cea9-f37d-40b6-a04d-83314d989d9d",
+              "name": "patient_message",
+              "value": "={{ $('Understood request').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "6920de47-4bf0-424a-b7f5-4c9e3655acbe",
+              "name": "summary",
+              "value": "={{ $('Understood request').item.json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "17d0e816-9497-447e-8cab-16f11f9c2f35",
+              "name": "log_id",
+              "value": "={{ 'MSG-' + $now.toFormat('yyMMdd-HHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "ddaf29ad-30ba-458e-89fe-a5613d6e047a",
+              "name": "created_at",
+              "value": "={{ $now.toFormat('yyyy-MM-dd HH:mm') }}",
+              "type": "string"
+            },
+            {
+              "id": "382dc7b9-76a5-4d39-bbba-76a427707c52",
+              "name": "action_taken",
+              "value": "URGENT alert sent to clinic",
+              "type": "string"
+            },
+            {
+              "id": "a14f9a48-4bad-4c3e-b57f-6f27d43268d6",
+              "name": "reply",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `نأسف جداً لتجربتك${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}. تم إبلاغ مدير العيادة وسيتواصل معك اليوم.` : `We're very sorry about your experience${$('Understood request').item.json.name ? ' ' + $('Understood request').item.json.name : ''}. The clinic manager has been notified and will contact you today.` }}",
+              "type": "string"
+            },
+            {
+              "id": "e7c85258-49a0-4eab-a564-daf45c465a0e",
+              "name": "email_subject",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `نعتذر لك – ${$env.CLINIC_NAME}` : `We're sorry – ${$env.CLINIC_NAME}` }}",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000036",
+      "name": "Outcome: other",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [
+        1280,
+        860
+      ],
+      "parameters": {
+        "assignments": {
+          "assignments": [
+            {
+              "id": "0a3a52ab-4897-48c0-9187-b442b463df1f",
+              "name": "ok",
+              "value": "true",
+              "type": "boolean"
+            },
+            {
+              "id": "73bc0019-2c29-4e47-b0b1-6870e1804b80",
+              "name": "intent",
+              "value": "other",
+              "type": "string"
+            },
+            {
+              "id": "e1820d90-d5d3-4797-8128-9dcfc43e7023",
+              "name": "urgency",
+              "value": "={{ $('Understood request').item.json.urgency }}",
+              "type": "string"
+            },
+            {
+              "id": "509a7520-2eca-4447-8ecc-66231536be7f",
+              "name": "name",
+              "value": "={{ $('Understood request').item.json.name }}",
+              "type": "string"
+            },
+            {
+              "id": "db8d1106-5211-43c3-bdc7-be9e972968c5",
+              "name": "phone",
+              "value": "={{ $('Understood request').item.json.phone }}",
+              "type": "string"
+            },
+            {
+              "id": "8faaa224-2418-4cd0-89fe-f4d28ae8867e",
+              "name": "email",
+              "value": "={{ $('Understood request').item.json.email }}",
+              "type": "string"
+            },
+            {
+              "id": "c4a50c5d-025a-4494-9009-7b38b62d4f1e",
+              "name": "language",
+              "value": "={{ $('Understood request').item.json.language }}",
+              "type": "string"
+            },
+            {
+              "id": "ffbf4326-fa13-448f-8b2f-c5277cd203fe",
+              "name": "patient_message",
+              "value": "={{ $('Understood request').item.json.message }}",
+              "type": "string"
+            },
+            {
+              "id": "5a4164f8-3cf2-47dc-94e9-3c394e0acb0e",
+              "name": "summary",
+              "value": "={{ $('Understood request').item.json.summary }}",
+              "type": "string"
+            },
+            {
+              "id": "fc87b7d7-3640-4f1e-9102-2f86f25690a6",
+              "name": "log_id",
+              "value": "={{ 'MSG-' + $now.toFormat('yyMMdd-HHmmss') }}",
+              "type": "string"
+            },
+            {
+              "id": "9e092925-e810-4e99-9c6d-937433d36e28",
+              "name": "created_at",
+              "value": "={{ $now.toFormat('yyyy-MM-dd HH:mm') }}",
+              "type": "string"
+            },
+            {
+              "id": "4bbb3448-a38f-42ae-ac04-06f5629351bd",
+              "name": "action_taken",
+              "value": "Logged only",
+              "type": "string"
+            },
+            {
+              "id": "4e3be1b4-cac5-44d7-bd50-7ba1e64470c0",
+              "name": "reply",
+              "value": "={{ $('Understood request').item.json.language === 'ar' ? `شكراً لرسالتك. إذا كنت ترغب في حجز موعد أو لديك سؤال عن خدماتنا، أخبرنا.` : `Thanks for your message. If you'd like an appointment or have a question about our services, just tell us.` }}",
+              "type": "string"
+            },
+            {
+              "id": "7f4c2005-dca4-4b38-a278-57492b5d8d74",
+              "name": "email_subject",
+              "value": "",
+              "type": "string"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000037",
+      "name": "Note: Finish",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        2380,
+        -40
+      ],
+      "parameters": {
+        "content": "## 7 · Finish – same for every message\n**Reply** to the caller as JSON `{ ok, intent, message }` · **log** every message in *Inquiries* · **email** the patient when there is an address.",
+        "width": 640,
+        "height": 140,
+        "color": 7
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000038",
+      "name": "Respond to caller",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        2440,
+        120
+      ],
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: $json.ok, intent: $json.intent || null, message: $json.reply }) }}",
+        "options": {
+          "responseCode": "={{ $json.ok ? 200 : 400 }}"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000039",
+      "name": "Log to Inquiries sheet",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        2440,
+        300
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Inquiries"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "value": {
+            "id": "={{ $json.log_id }}",
+            "created_at": "={{ $json.created_at }}",
+            "intent": "={{ $json.intent }}",
+            "urgency": "={{ $json.urgency }}",
+            "name": "={{ $json.name }}",
+            "phone": "={{ $json.phone }}",
+            "email": "={{ $json.email }}",
+            "language": "={{ $json.language }}",
+            "message": "={{ $json.patient_message }}",
+            "summary": "={{ $json.summary }}",
+            "action_taken": "={{ $json.action_taken }}"
+          },
+          "matchingColumns": [],
+          "schema": [
+            {
+              "id": "id",
+              "displayName": "id",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "created_at",
+              "displayName": "created_at",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "intent",
+              "displayName": "intent",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "urgency",
+              "displayName": "urgency",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "name",
+              "displayName": "name",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "phone",
+              "displayName": "phone",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "email",
+              "displayName": "email",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "language",
+              "displayName": "language",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "message",
+              "displayName": "message",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "summary",
+              "displayName": "summary",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "action_taken",
+              "displayName": "action_taken",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {
+          "cellFormat": "RAW"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000040",
+      "name": "Has email to send?",
+      "type": "n8n-nodes-base.filter",
+      "typeVersion": 2.2,
+      "position": [
+        2440,
+        480
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "loose",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "260725d0-e916-4776-8477-181ba143862e",
+              "leftValue": "={{ $json.email }}",
+              "operator": {
+                "type": "string",
+                "operation": "regex"
+              },
+              "rightValue": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$"
+            },
+            {
+              "id": "31b29fbe-74a0-43b6-8714-61d1d359c0fe",
+              "leftValue": "={{ $json.email_subject }}",
+              "operator": {
+                "type": "string",
+                "operation": "notEmpty",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c1000000-0000-4000-8000-000000000041",
+      "name": "Email patient",
+      "type": "n8n-nodes-base.emailSend",
+      "typeVersion": 2.1,
+      "position": [
+        2660,
+        480
+      ],
+      "parameters": {
+        "fromEmail": "={{ $env.SMTP_FROM_NAME }} <{{ $env.SMTP_USER }}>",
+        "toEmail": "={{ $json.email }}",
+        "subject": "={{ $json.email_subject }}",
+        "emailFormat": "html",
+        "html": "={{ '<div dir=\"' + ($json.language === 'ar' ? 'rtl' : 'ltr') + '\" style=\"font-family:Arial,sans-serif;font-size:15px;line-height:1.7\">' + $json.reply.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/\\n/g, '<br>') + '<br><br>— ' + $env.CLINIC_NAME + '</div>' }}",
+        "options": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "smtp": {
+          "id": "clinicSmtpGmail1",
+          "name": "Clinic Gmail SMTP"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Contact the clinic (form)": {
+      "main": [
+        [
+          {
+            "node": "Forward form to webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook /clinic-intake": {
+      "main": [
+        [
+          {
+            "node": "Normalize input",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Normalize input": {
+      "main": [
+        [
+          {
+            "node": "Has a message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has a message?": {
+      "main": [
+        [
+          {
+            "node": "AI: Understand message",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply: invalid request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Understand message": {
+      "main": [
+        [
+          {
+            "node": "Validate AI answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate AI answer": {
+      "main": [
+        [
+          {
+            "node": "Valid JSON?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid JSON?": {
+      "main": [
+        [
+          {
+            "node": "Understood request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "AI: Retry once",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Retry once": {
+      "main": [
+        [
+          {
+            "node": "Validate retry (fallback: other)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate retry (fallback: other)": {
+      "main": [
+        [
+          {
+            "node": "Understood request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Understood request": {
+      "main": [
+        [
+          {
+            "node": "Urgent? (high, not complaint)",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Route by intent",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Urgent? (high, not complaint)": {
+      "main": [
+        [
+          {
+            "node": "Telegram: URGENT case",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by intent": {
+      "main": [
+        [
+          {
+            "node": "Date & time given?",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Clinic FAQ",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: URGENT complaint",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Outcome: other",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Date & time given?": {
+      "main": [
+        [
+          {
+            "node": "Booking row",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Outcome: ask for date/time",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Booking row": {
+      "main": [
+        [
+          {
+            "node": "Add to Bookings sheet",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Add to Bookings sheet": {
+      "main": [
+        [
+          {
+            "node": "Telegram: New booking",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: New booking": {
+      "main": [
+        [
+          {
+            "node": "Outcome: booking received",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinic FAQ": {
+      "main": [
+        [
+          {
+            "node": "AI: Answer from FAQ",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Answer from FAQ": {
+      "main": [
+        [
+          {
+            "node": "Read FAQ answer",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read FAQ answer": {
+      "main": [
+        [
+          {
+            "node": "Answered from FAQ?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Answered from FAQ?": {
+      "main": [
+        [
+          {
+            "node": "Outcome: question",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Telegram: Question for the team",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: Question for the team": {
+      "main": [
+        [
+          {
+            "node": "Outcome: question",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Telegram: URGENT complaint": {
+      "main": [
+        [
+          {
+            "node": "Outcome: complaint",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Reply: invalid request": {
+      "main": [
+        [
+          {
+            "node": "Respond to caller",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outcome: booking received": {
+      "main": [
+        [
+          {
+            "node": "Respond to caller",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Inquiries sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has email to send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outcome: ask for date/time": {
+      "main": [
+        [
+          {
+            "node": "Respond to caller",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Inquiries sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has email to send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outcome: question": {
+      "main": [
+        [
+          {
+            "node": "Respond to caller",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Inquiries sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has email to send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outcome: complaint": {
+      "main": [
+        [
+          {
+            "node": "Respond to caller",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Inquiries sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has email to send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Outcome: other": {
+      "main": [
+        [
+          {
+            "node": "Respond to caller",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Log to Inquiries sheet",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Has email to send?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has email to send?": {
+      "main": [
+        [
+          {
+            "node": "Email patient",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
