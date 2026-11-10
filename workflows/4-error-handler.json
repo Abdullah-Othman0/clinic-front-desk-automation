@@ -1,0 +1,45 @@
+{
+  "id": "clinicErrorHndlr",
+  "name": "4 · Clinic – Error Handler",
+  "active": false,
+  "settings": { "executionOrder": "v1", "timezone": "Africa/Cairo" },
+  "nodes": [
+    {
+      "id": "e4000000-0000-4000-8000-000000000001",
+      "name": "About this workflow",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [-120, -260],
+      "parameters": {
+        "width": 560,
+        "height": 220,
+        "color": 3,
+        "content": "## 🚨 Error handler\nWorkflows 1–3 point here (Settings → Error workflow).\nWhen any of them fails in production, the admin instantly gets a Telegram message with:\n- workflow name\n- the node that failed\n- the error message\n- a direct link to the failed execution"
+      }
+    },
+    {
+      "id": "e4000000-0000-4000-8000-000000000002",
+      "name": "When a workflow fails",
+      "type": "n8n-nodes-base.errorTrigger",
+      "typeVersion": 1,
+      "position": [0, 0],
+      "parameters": {}
+    },
+    {
+      "id": "e4000000-0000-4000-8000-000000000003",
+      "name": "Telegram: Alert admin",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [260, 0],
+      "credentials": { "telegramApi": { "id": "clinicTelegram01", "name": "Clinic Telegram Bot" } },
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_ADMIN_CHAT_ID }}",
+        "text": "=⚠️ Automation error\n\nWorkflow: {{ $json.workflow.name }}\nFailed node: {{ $json.execution.lastNodeExecuted || 'unknown' }}\nError: {{ ($json.execution.error.message || 'unknown').slice(0, 500) }}\nTime: {{ $now.toFormat('yyyy-MM-dd HH:mm') }}\n\nExecution: {{ $json.execution.url || 'n/a' }}",
+        "additionalFields": { "appendAttribution": false }
+      }
+    }
+  ],
+  "connections": {
+    "When a workflow fails": { "main": [[{ "node": "Telegram: Alert admin", "type": "main", "index": 0 }]] }
+  }
+}
