@@ -83,9 +83,13 @@ flowchart LR
 | ![Intake workflow](docs/screenshots/01-intake-workflow.png) | ![Bookings sheet](docs/screenshots/02-bookings-sheet.png) |
 | Intake workflow (n8n) | Bookings sheet |
 | ![Telegram alerts](docs/screenshots/03-telegram.png) | ![Arabic confirmation email](docs/screenshots/04-email-ar.png) |
-| Telegram: booking, URGENT, daily summary | Arabic confirmation email |
+| Telegram: complaint and URGENT alerts | Arabic confirmation email |
 | ![Contact form](docs/screenshots/05-form.png) | ![Error alert](docs/screenshots/06-error-alert.png) |
 | Patient contact form | Error alert to admin |
+| ![Chatbot workflow](docs/screenshots/07-chatbot-workflow.png) | ![Website chatbot](docs/screenshots/08-chatbot-site.png) |
+| Chatbot requests workflow: one route per business | The website chatbot taking a booking |
+| ![Leads sheet](docs/screenshots/09-leads-sheet.png) | ![Per-business Telegram alerts](docs/screenshots/10-telegram-chatbot.png) |
+| Agency leads, scored Hot / Cold by AI | Telegram: hot/cold lead and hotel stay alerts |
 
 ---
 
@@ -172,10 +176,11 @@ In n8n, go to **Workflows → Import from File** and pick each JSON in `workflow
 - **Authenticated webhook.** Every call must carry the `X-Clinic-Secret` header, or it gets HTTP 403. The public form goes through the same protected path.
 - **Input validation.** Inputs are trimmed and length-limited, and a missing message returns a clean HTTP 400 JSON. Malformed JSON is rejected by n8n (HTTP 422) before any processing.
 - **AI output is never trusted blindly.** Gemini is forced into a JSON schema, then a Code node validates every field (allowed values, date `YYYY-MM-DD`, time `HH:mm`). Broken output triggers one retry, then a safe fallback to `other` for manual review.
-- **Retries.** Every Gemini call retries 3× on network errors or rate limits.
+- **Retries.** Every Gemini call and every sheet write retries 3× on network errors or rate limits.
+- **Safe under load.** Sheet rows are added with Google's atomic append, so messages arriving at the same moment never overwrite each other (tested with 5 simultaneous requests).
 - **No hallucinated answers.** Questions are answered only from the clinic FAQ. Unknown questions go to a human.
 - **No duplicates.** Reminders flip `reminder_sent` after sending, so reruns never email twice.
-- **Error alerts.** Workflows 1–3 report failures to the admin's Telegram with the workflow name, failed node, error message and a direct execution link.
+- **Error alerts.** Workflows 1–3 and 5 report failures to the admin's Telegram with the workflow name, failed node, error message and a direct execution link.
 - **No secrets in the repo.** `.env` and `secrets/` are git-ignored. Credentials are created from `.env` inside the container and stored encrypted, and workflow exports contain only credential references.
 
 ## Easy to extend

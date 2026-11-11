@@ -14,7 +14,7 @@
         "width": 560,
         "height": 220,
         "color": 3,
-        "content": "## 🚨 Error handler\nWorkflows 1–3 point here (Settings → Error workflow).\nWhen any of them fails in production, the admin instantly gets a Telegram message with:\n- workflow name\n- the node that failed\n- the error message\n- a direct link to the failed execution"
+        "content": "## 🚨 Error handler\nWorkflows 1–3 and 5 point here (Settings → Error workflow).\nWhen any of them fails in production, the admin instantly gets a Telegram message with:\n- workflow name\n- the node that failed\n- the error message\n- a direct link to the failed execution"
       }
     },
     {

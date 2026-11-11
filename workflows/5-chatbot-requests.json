@@ -9,7 +9,7 @@
       "typeVersion": 1,
       "position": [
         -1000,
-        -300
+        -520
       ],
       "parameters": {
         "content": "## Website chatbot → n8n\nThe chatbot (web-chatbot-demo) POSTs every **confirmed** request here with the `X-Clinic-Secret` header, after saving it to Supabase.\nn8n answers 202 at once so the chat never waits.",
@@ -25,7 +25,7 @@
       "typeVersion": 1,
       "position": [
         -360,
-        -300
+        -520
       ],
       "parameters": {
         "content": "## Read the request\nGemini turns the free-text *when* and *details* into dates, times and fields that fit **that** business, plus a priority:\nclinic = pain → urgent · restaurant = allergy / big party · agency = hot/warm/cold lead · hotel = arriving soon.",
@@ -41,7 +41,7 @@
       "typeVersion": 1,
       "position": [
         320,
-        -300
+        -520
       ],
       "parameters": {
         "content": "## One sheet tab per business, one Telegram alert\nClinic rows land in **Bookings** so the 09:00 reminders and 20:00 summary already include them.",
@@ -279,7 +279,7 @@
       "typeVersion": 4.5,
       "position": [
         680,
-        -180
+        -300
       ],
       "parameters": {
         "authentication": "serviceAccount",
@@ -302,7 +302,8 @@
         },
         "options": {
           "cellFormat": "RAW",
-          "handlingExtraData": "ignoreIt"
+          "handlingExtraData": "ignoreIt",
+          "useAppend": true
         }
       },
       "credentials": {
@@ -310,7 +311,10 @@
           "id": "clinicGoogleSa01",
           "name": "Clinic Google Service Account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c5000000-0000-4000-8000-00000000012",
@@ -319,7 +323,7 @@
       "typeVersion": 4.5,
       "position": [
         680,
-        -60
+        -100
       ],
       "parameters": {
         "authentication": "serviceAccount",
@@ -342,7 +346,8 @@
         },
         "options": {
           "cellFormat": "RAW",
-          "handlingExtraData": "ignoreIt"
+          "handlingExtraData": "ignoreIt",
+          "useAppend": true
         }
       },
       "credentials": {
@@ -350,7 +355,10 @@
           "id": "clinicGoogleSa01",
           "name": "Clinic Google Service Account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c5000000-0000-4000-8000-00000000013",
@@ -359,7 +367,7 @@
       "typeVersion": 4.5,
       "position": [
         680,
-        60
+        100
       ],
       "parameters": {
         "authentication": "serviceAccount",
@@ -382,7 +390,8 @@
         },
         "options": {
           "cellFormat": "RAW",
-          "handlingExtraData": "ignoreIt"
+          "handlingExtraData": "ignoreIt",
+          "useAppend": true
         }
       },
       "credentials": {
@@ -390,7 +399,10 @@
           "id": "clinicGoogleSa01",
           "name": "Clinic Google Service Account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c5000000-0000-4000-8000-00000000014",
@@ -399,7 +411,7 @@
       "typeVersion": 4.5,
       "position": [
         680,
-        180
+        300
       ],
       "parameters": {
         "authentication": "serviceAccount",
@@ -422,7 +434,8 @@
         },
         "options": {
           "cellFormat": "RAW",
-          "handlingExtraData": "ignoreIt"
+          "handlingExtraData": "ignoreIt",
+          "useAppend": true
         }
       },
       "credentials": {
@@ -430,7 +443,10 @@
           "id": "clinicGoogleSa01",
           "name": "Clinic Google Service Account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     }
   ],
   "connections": {

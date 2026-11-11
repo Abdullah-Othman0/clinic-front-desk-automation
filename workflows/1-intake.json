@@ -835,7 +835,8 @@
           ]
         },
         "options": {
-          "cellFormat": "RAW"
+          "cellFormat": "RAW",
+          "useAppend": true
         }
       },
       "credentials": {
@@ -843,7 +844,10 @@
           "id": "clinicGoogleSa01",
           "name": "Clinic Google Service Account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c1000000-0000-4000-8000-000000000023",
@@ -1727,7 +1731,8 @@
           ]
         },
         "options": {
-          "cellFormat": "RAW"
+          "cellFormat": "RAW",
+          "useAppend": true
         }
       },
       "credentials": {
@@ -1735,7 +1740,10 @@
           "id": "clinicGoogleSa01",
           "name": "Clinic Google Service Account"
         }
-      }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 2000
     },
     {
       "id": "c1000000-0000-4000-8000-000000000040",
