@@ -1,0 +1,567 @@
+{
+  "name": "5 · Chatbot requests (clinic, restaurant, agency, hotel)",
+  "id": "clinicChatbot001",
+  "nodes": [
+    {
+      "id": "c5000000-0000-4000-8000-00000000091",
+      "name": "Note: Chatbot",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -1000,
+        -300
+      ],
+      "parameters": {
+        "content": "## Website chatbot → n8n\nThe chatbot (web-chatbot-demo) POSTs every **confirmed** request here with the `X-Clinic-Secret` header, after saving it to Supabase.\nn8n answers 202 at once so the chat never waits.",
+        "width": 600,
+        "height": 140,
+        "color": 5
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-00000000092",
+      "name": "Note: Understand",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        -360,
+        -300
+      ],
+      "parameters": {
+        "content": "## Read the request\nGemini turns the free-text *when* and *details* into dates, times and fields that fit **that** business, plus a priority:\nclinic = pain → urgent · restaurant = allergy / big party · agency = hot/warm/cold lead · hotel = arriving soon.",
+        "width": 620,
+        "height": 140,
+        "color": 7
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-00000000093",
+      "name": "Note: Per business",
+      "type": "n8n-nodes-base.stickyNote",
+      "typeVersion": 1,
+      "position": [
+        320,
+        -300
+      ],
+      "parameters": {
+        "content": "## One sheet tab per business, one Telegram alert\nClinic rows land in **Bookings** so the 09:00 reminders and 20:00 summary already include them.",
+        "width": 820,
+        "height": 120,
+        "color": 4
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-000000000001",
+      "name": "Webhook /chatbot-request",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -940,
+        0
+      ],
+      "webhookId": "5b0a4f0e-3c1e-4c55-9a0d-c11c1a000005",
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "chatbot-request",
+        "authentication": "headerAuth",
+        "responseMode": "onReceived",
+        "options": {
+          "responseCode": 202
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "clinicWebhookAu1",
+          "name": "Clinic Webhook Secret"
+        }
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-000000000002",
+      "name": "Check request",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -700,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Trust boundary: the chatbot is ours, but validate anyway.\nconst b = $json.body || {};\nconst business = String(b.business || '');\nif (!['clinic', 'restaurant', 'agency', 'hotel'].includes(business)) throw new Error('Unknown business: ' + business);\nconst s = (v, max) => String(v ?? '').trim().slice(0, max);\nconst out = { business, name: s(b.name, 100), phone: s(b.phone, 30), when: s(b.when, 100), details: s(b.details, 500) };\nif (!out.name || !out.phone || !out.when) throw new Error('Chatbot request missing name, phone or when');\nreturn { json: out };"
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-000000000003",
+      "name": "AI: Read request",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        -300,
+        0
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "=https://generativelanguage.googleapis.com/v1beta/models/{{ $env.GEMINI_MODEL }}:generateContent",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "googlePalmApi",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  systemInstruction: { parts: [{ text:\n`You read booking requests that a website chatbot collected for a small business. Today is ${$now.toFormat('cccc yyyy-MM-dd')} (Africa/Cairo).\nBusiness: ${$json.business}. ${({\n  clinic: 'A dental clinic. priority: \"high\" if the patient mentions pain, swelling, bleeding, a broken tooth or an emergency; \"low\" for routine cleaning/check-up; else \"normal\". reason: why they are coming.',\n  restaurant: 'A restaurant. allergies: any allergy or dietary need (\"\" if none). occasion: birthday, anniversary... priority: \"high\" if there is an allergy or 8+ guests; else \"normal\".',\n  agency: 'A marketing agency; the visitor booked a free strategy call. company: their business. need: what they want help with. budget: as stated or \"\". priority is the lead score: \"high\" = clear need plus a budget or urgency (hot), \"normal\" = clear need (warm), \"low\" = vague or just browsing (cold).',\n  hotel: 'A boutique hotel. date = check-in, end_date = check-out. room: requested room type. extras: late arrival, airport transfer, cot, pet... priority: \"high\" if check-in is within 3 days or extras need preparation; else \"normal\".'\n})[$json.business]}\nReturn JSON only. Dates YYYY-MM-DD (resolve words like tomorrow, Friday, بكرة from today). time HH:mm 24h (\"8 pm\", \"8 مساءً\", \"الساعة 8 مساء\" -> \"20:00\"; \"10am\" -> \"10:00\"). guests a number as text. Use \"\" for anything not given or not relevant.\nlanguage: \"ar\" if the name or details are mainly Arabic, else \"en\". summary: one short English sentence for staff.` }] },\n  contents: [{ role: 'user', parts: [{ text: 'When: ' + $json.when + '\\nDetails: ' + ($json.details || '-') + '\\nName: ' + $json.name }] }],\n  generationConfig: {\n    temperature: 0,\n    responseMimeType: 'application/json',\n    responseSchema: {\n      type: 'OBJECT',\n      properties: Object.fromEntries(['date','time','end_date','guests','reason','allergies','occasion','company','need','budget','room','extras','summary']\n        .map(k => [k, { type: 'STRING' }]).concat([\n          ['priority', { type: 'STRING', enum: ['low', 'normal', 'high'] }],\n          ['language', { type: 'STRING', enum: ['ar', 'en'] }]])),\n      required: ['date','time','priority','language','summary']\n    }\n  }\n}) }}",
+        "options": {
+          "timeout": 30000
+        }
+      },
+      "credentials": {
+        "googlePalmApi": {
+          "id": "clinicGemini0001",
+          "name": "Clinic Google Gemini"
+        }
+      },
+      "retryOnFail": true,
+      "maxTries": 3,
+      "waitBetweenTries": 5000,
+      "onError": "continueRegularOutput"
+    },
+    {
+      "id": "c5000000-0000-4000-8000-000000000004",
+      "name": "Build row & alert",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        -60,
+        0
+      ],
+      "parameters": {
+        "mode": "runOnceForEachItem",
+        "jsCode": "// Turn the AI reading into one sheet row + one Telegram alert, shaped per business.\nconst req = $('Check request').item.json;\nlet ai = {};\ntry { ai = JSON.parse($json.candidates?.[0]?.content?.parts?.[0]?.text ?? ''); } catch (e) {}\nconst g = k => (typeof ai[k] === 'string' ? ai[k].trim() : '');\nconst isDate = v => /^\\d{4}-\\d{2}-\\d{2}$/.test(v) ? v : '';\nconst isTime = v => /^([01]\\d|2[0-3]):[0-5]\\d$/.test(v) ? v : '';\nconst date = isDate(g('date')), time = isTime(g('time'));\nconst priority = ['low', 'normal', 'high'].includes(ai.priority) ? ai.priority : 'normal';\n// AI failed -> keep the raw text so staff still see everything\nconst summary = g('summary') || `AI could not read this request. When: ${req.when}. Details: ${req.details || '-'}`;\nconst language = ai.language === 'ar' || (!ai.language && /[؀-ۿ]/.test(req.name + req.details)) ? 'ar' : 'en';\nconst now = $now.toFormat('yyyy-MM-dd HH:mm');\nconst stamp = $now.toFormat('yyMMdd-HHmmss');\nconst when = date ? `${date}${time ? ' at ' + time : ''}` : `${req.when} (date not understood)`;\nconst base = `Name: ${req.name}\\nPhone: ${req.phone}`;\nconst tail = `\\nNote: ${summary}\\nVia: website chatbot`;\nlet tab, row, alert;\n\nif (req.business === 'clinic') {\n  tab = 'Bookings';\n  row = { id: 'BK-' + stamp, created_at: now, name: req.name, phone: req.phone, email: '', date, time,\n          status: 'Pending', reminder_sent: 'false', language, summary: '[Chatbot] ' + summary };\n  alert = (priority === 'high' ? '🚨 URGENT – patient in pain (chatbot)\\n\\n' : '🦷 New booking request (chatbot)\\n\\n')\n    + `Ref: ${row.id}\\n${base}\\nWhen: ${when}\\nReason: ${g('reason') || '-'}${tail}\\n\\nStatus: Pending – call to confirm, then set Confirmed in Bookings.`;\n} else if (req.business === 'restaurant') {\n  tab = 'Reservations';\n  const guests = g('guests'), allergies = g('allergies');\n  row = { id: 'RS-' + stamp, created_at: now, name: req.name, phone: req.phone, date, time, guests,\n          allergies, occasion: g('occasion'), status: 'Pending', language, summary };\n  alert = `🍽 New table request\\n\\nRef: ${row.id}\\n${base}\\nWhen: ${when}\\nGuests: ${guests || '?'}`\n    + (Number(guests) >= 8 ? '  👥 large party' : '')\n    + (allergies ? `\\n⚠️ ALLERGY: ${allergies} – kitchen must confirm` : '')\n    + (row.occasion ? `\\n🎉 Occasion: ${row.occasion}` : '') + tail + '\\n\\nText the guest to confirm within 2 hours.';\n} else if (req.business === 'agency') {\n  tab = 'Leads';\n  const score = { high: 'Hot', normal: 'Warm', low: 'Cold' }[priority];\n  row = { id: 'LD-' + stamp, created_at: now, name: req.name, phone: req.phone, company: g('company'), need: g('need'),\n          budget: g('budget'), call_date: date, call_time: time, score, status: 'New', summary };\n  alert = `${{ Hot: '🔥', Warm: '🟡', Cold: '⚪' }[score]} ${score} lead – strategy call\\n\\nRef: ${row.id}\\n${base}`\n    + `\\nBusiness: ${row.company || '-'}\\nWants: ${row.need || '-'}\\nBudget: ${row.budget || 'not shared'}\\nCall: ${when}${tail}`;\n} else {\n  tab = 'Stays';\n  const out = isDate(g('end_date'));\n  const nights = date && out ? Math.max(0, Math.round((new Date(out) - new Date(date)) / 864e5)) : '';\n  const daysAway = date ? Math.round((new Date(date) - new Date($now.toFormat('yyyy-MM-dd'))) / 864e5) : null;\n  row = { id: 'ST-' + stamp, created_at: now, name: req.name, phone: req.phone, check_in: date, check_out: out,\n          nights: String(nights), guests: g('guests'), room: g('room'), extras: g('extras'), status: 'Pending', language, summary };\n  alert = `🏨 New stay request\\n\\nRef: ${row.id}\\n${base}\\nDates: ${date || req.when} → ${out || '?'}${nights !== '' ? ` (${nights} night${nights === 1 ? '' : 's'})` : ''}`\n    + `\\nGuests: ${row.guests || '?'}\\nRoom: ${row.room || 'not chosen'}`\n    + (row.extras ? `\\n🧳 Extras: ${row.extras}` : '')\n    + (daysAway !== null && daysAway <= 3 ? `\\n⏰ Arrives in ${daysAway} day(s) – check availability now` : '') + tail;\n}\nreturn { json: { ...row, _tab: tab, _alert: alert } };"
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-000000000005",
+      "name": "Route by business",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        380,
+        0
+      ],
+      "parameters": {
+        "rules": {
+          "values": [
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r1",
+                    "leftValue": "={{ $json._tab }}",
+                    "rightValue": "Bookings",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "clinic"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r2",
+                    "leftValue": "={{ $json._tab }}",
+                    "rightValue": "Reservations",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "restaurant"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r3",
+                    "leftValue": "={{ $json._tab }}",
+                    "rightValue": "Leads",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "agency"
+            },
+            {
+              "conditions": {
+                "options": {
+                  "caseSensitive": true,
+                  "leftValue": "",
+                  "typeValidation": "strict",
+                  "version": 2
+                },
+                "conditions": [
+                  {
+                    "id": "r4",
+                    "leftValue": "={{ $json._tab }}",
+                    "rightValue": "Stays",
+                    "operator": {
+                      "type": "string",
+                      "operation": "equals"
+                    }
+                  }
+                ],
+                "combinator": "and"
+              },
+              "renameOutput": true,
+              "outputKey": "hotel"
+            }
+          ]
+        },
+        "options": {}
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-000000000006",
+      "name": "Telegram: Alert staff",
+      "type": "n8n-nodes-base.telegram",
+      "typeVersion": 1.2,
+      "position": [
+        960,
+        0
+      ],
+      "parameters": {
+        "chatId": "={{ $env.TELEGRAM_CHAT_ID }}",
+        "text": "={{ $('Build row & alert').item.json._alert }}",
+        "additionalFields": {
+          "appendAttribution": false
+        }
+      },
+      "credentials": {
+        "telegramApi": {
+          "id": "clinicTelegram01",
+          "name": "Clinic Telegram Bot"
+        }
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-00000000011",
+      "name": "Clinic → Bookings",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        -180
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Bookings"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-00000000012",
+      "name": "Restaurant → Reservations",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        -60
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Reservations"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-00000000013",
+      "name": "Agency → Leads",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        60
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Leads"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    },
+    {
+      "id": "c5000000-0000-4000-8000-00000000014",
+      "name": "Hotel → Stays",
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        680,
+        180
+      ],
+      "parameters": {
+        "authentication": "serviceAccount",
+        "operation": "append",
+        "documentId": {
+          "__rl": true,
+          "mode": "id",
+          "value": "={{ $env.GOOGLE_SHEET_ID }}"
+        },
+        "sheetName": {
+          "__rl": true,
+          "mode": "name",
+          "value": "Stays"
+        },
+        "columns": {
+          "mappingMode": "autoMapInputData",
+          "value": {},
+          "matchingColumns": [],
+          "schema": []
+        },
+        "options": {
+          "cellFormat": "RAW",
+          "handlingExtraData": "ignoreIt"
+        }
+      },
+      "credentials": {
+        "googleApi": {
+          "id": "clinicGoogleSa01",
+          "name": "Clinic Google Service Account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook /chatbot-request": {
+      "main": [
+        [
+          {
+            "node": "Check request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Check request": {
+      "main": [
+        [
+          {
+            "node": "AI: Read request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "AI: Read request": {
+      "main": [
+        [
+          {
+            "node": "Build row & alert",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build row & alert": {
+      "main": [
+        [
+          {
+            "node": "Route by business",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route by business": {
+      "main": [
+        [
+          {
+            "node": "Clinic → Bookings",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Restaurant → Reservations",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Agency → Leads",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Hotel → Stays",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Clinic → Bookings": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Alert staff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Restaurant → Reservations": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Alert staff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Agency → Leads": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Alert staff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Hotel → Stays": {
+      "main": [
+        [
+          {
+            "node": "Telegram: Alert staff",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1",
+    "timezone": "Africa/Cairo",
+    "errorWorkflow": "clinicErrorHndlr",
+    "saveDataSuccessExecution": "all",
+    "saveManualExecutions": true
+  },
+  "pinData": {},
+  "active": false
+}

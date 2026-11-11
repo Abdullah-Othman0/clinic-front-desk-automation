@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# One-time: creates the "Bookings" and "Inquiries" tabs in GOOGLE_SHEET_ID with header rows,
+# One-time: creates the Bookings, Inquiries, Reservations, Leads and Stays tabs in GOOGLE_SHEET_ID with header rows,
 # using the service account in secrets/. Safe to re-run (only adds what is missing; rewrites headers).
 #   ./scripts/setup-sheet.sh --reset   also deletes all data rows (clean sheet before a demo)
 set -euo pipefail
@@ -13,6 +13,10 @@ const id = process.env.GOOGLE_SHEET_ID;
 const TABS = {
   Bookings:  ["id","created_at","name","phone","email","date","time","status","reminder_sent","language","summary"],
   Inquiries: ["id","created_at","intent","urgency","name","phone","email","language","message","summary","action_taken"],
+  // Website chatbot requests (workflow 5); clinic chatbot bookings go to Bookings above
+  Reservations: ["id","created_at","name","phone","date","time","guests","allergies","occasion","status","language","summary"],
+  Leads:     ["id","created_at","name","phone","company","need","budget","call_date","call_time","score","status","summary"],
+  Stays:     ["id","created_at","name","phone","check_in","check_out","nights","guests","room","extras","status","language","summary"],
 };
 const b64 = o => Buffer.from(typeof o === "string" ? o : JSON.stringify(o)).toString("base64url");
 (async () => {

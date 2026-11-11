@@ -106,7 +106,8 @@ flowchart LR
 | `workflows/1-intake.json` | Intake (form + webhook + AI) | Form, `POST /webhook/clinic-intake` |
 | `workflows/2-reminders.json` | Appointment reminders | Daily 09:00 Africa/Cairo, + "Run now" |
 | `workflows/3-daily-summary.json` | Daily summary | Daily 20:00 Africa/Cairo, + "Run now" |
-| `workflows/4-error-handler.json` | Error handler | Error Trigger (error workflow of 1–3) |
+| `workflows/4-error-handler.json` | Error handler | Error Trigger (error workflow of 1–3, 5) |
+| `workflows/5-chatbot-requests.json` | Website chatbot requests (clinic, restaurant, agency, hotel) | `POST /webhook/chatbot-request` from [web-chatbot-demo](https://github.com/Abdullah-Othman0/web-chatbot-demo) |
 
 ## Setup (about 15 minutes)
 
@@ -115,8 +116,8 @@ flowchart LR
 3. Save the Google service-account key as `secrets/google-service-account.json`. Share your Google Sheet with the service account's email as **Editor**.
 4. `docker compose up -d`, then open http://localhost:5678 and create the n8n owner account.
 5. `./scripts/setup-credentials.sh` creates all 5 n8n credentials from `.env`, encrypted, with no secret files left behind.
-6. `./scripts/setup-sheet.sh` creates the **Bookings** and **Inquiries** tabs with headers.
-7. `./scripts/import-workflows.sh` imports and publishes all four workflows.
+6. `./scripts/setup-sheet.sh` creates the **Bookings**, **Inquiries**, **Reservations**, **Leads** and **Stays** tabs with headers.
+7. `./scripts/import-workflows.sh` imports and publishes all five workflows.
 8. `./scripts/test-requests.sh` sends the 11 sample messages. Check the sheet, Telegram and your inbox.
 
 ## Importing workflows manually
@@ -133,6 +134,14 @@ In n8n, go to **Workflows → Import from File** and pick each JSON in `workflow
   # → {"ok":true,"intent":"booking","message":"Thank you Sara! We received your booking request ..."}
   ```
   Only `message` is required. The `message` in the response is ready to show to the patient, so a chatbot can reply with it directly.
+- **Website chatbot ([web-chatbot-demo](https://github.com/Abdullah-Othman0/web-chatbot-demo)):** set `N8N_WEBHOOK_URL=http://localhost:5678/webhook/chatbot-request` and `N8N_WEBHOOK_SECRET` (= `WEBHOOK_SECRET`) in the chatbot's `.env.local`. Each request the visitor confirms is sent here as `{business, name, phone, when, details}`. Gemini reads it with rules for that business, and it is filed and alerted on like this:
+
+  | Business | Sheet tab | What the automation adds |
+  |---|---|---|
+  | clinic | Bookings | dates parsed so the 09:00 reminder and 20:00 summary include it; pain or swelling → 🚨 URGENT alert |
+  | restaurant | Reservations | guests, allergies, occasion; ⚠️ allergy and 👥 8+ guests flagged for the kitchen |
+  | agency | Leads | company, need, budget; lead scored 🔥 Hot / 🟡 Warm / ⚪ Cold |
+  | hotel | Stays | check-in/out and nights; extras (cot, transfer, late arrival); ⏰ arriving within 3 days flagged |
 - **Form:** `http://localhost:5678/form/5b0a4f0e-3c1e-4c55-9a0d-c11c1a000001`
 - **Staff:** change a booking's `status` from `Pending` to `Confirmed` in the sheet. The reminder is sent the day before.
 - **Test the schedules now:** `./scripts/run-now.sh reminders` or `./scripts/run-now.sh summary`
