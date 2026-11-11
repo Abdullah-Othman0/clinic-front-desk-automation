@@ -78,8 +78,6 @@ flowchart LR
 
 ## Screenshots
 
-> _Placeholders: replace with your own captures in `docs/screenshots/`._
-
 | | |
 |---|---|
 | ![Intake workflow](docs/screenshots/01-intake-workflow.png) | ![Bookings sheet](docs/screenshots/02-bookings-sheet.png) |
